@@ -3,7 +3,7 @@
 # Run: python draw_polyominoes.py
 
 import sys
-import math
+#import math
 import random
 import pygame
 
@@ -15,8 +15,8 @@ GRID_CELL = 30
 GRID_COLOR = (200, 200, 200)
 BG_COLOR = (30, 30, 30)
 GRID_ORIGIN = (60, 60)  # top-left pixel of grid
-GRID_COLS = 20
-GRID_ROWS = 18
+GRID_COLS = 16
+GRID_ROWS = 16
 
 # ---------- Sample polyomino definitions ----------
 # Each polyomino is a list of (x, y) cells using integer coordinates.
@@ -47,8 +47,8 @@ SAMPLE_POLYOMINOES = {
 PALETTE = [
     (65, 105, 225),
     (255, 99, 71),
-    (80, 180, 255),
     (191, 255, 0),
+    (80, 180, 255),
     (147, 112, 219),
     (220, 20, 60),
     (0, 255, 255),
@@ -124,7 +124,7 @@ class Board:
         ox, oy = self.origin
         cs = self.cell_size
         grid_rect = pygame.Rect(ox - 1, oy - 1, cs * self.cols + 2, cs * self.rows + 2)
-        pygame.draw.rect(surface, (50, 50, 50), grid_rect)
+        pygame.draw.rect(surface, (255, 255, 230), grid_rect)
 
     def draw_grid_lines(self, surface, font=None):
         """Draw grid lines and optional coordinate labels on top of pieces."""
