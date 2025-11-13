@@ -1,0 +1,372 @@
+# pygame-based polyomino drawer (patched)
+# Requires: pygame (pip install pygame)
+# Run: python draw_polyominoes.py
+
+import sys
+import math
+import random
+import pygame
+
+# ---------- Configuration ----------
+WINDOW_SIZE = (900, 700)
+FPS = 60
+
+GRID_CELL = 30
+GRID_COLOR = (200, 200, 200)
+BG_COLOR = (30, 30, 30)
+GRID_ORIGIN = (60, 60)  # top-left pixel of grid
+GRID_COLS = 20
+GRID_ROWS = 18
+
+# ---------- Sample polyomino definitions ----------
+# Each polyomino is a list of (x, y) cells using integer coordinates.
+# The origin (0,0) is the polyomino's local reference.
+SAMPLE_POLYOMINOES = {
+    "triomino-I": [(0, 0), (1, 0), (2, 0)],
+    "triomino-L": [(0, 0), (0, 1), (1, 1)],
+    "tetromino-I": [(0, 0), (0, 1), (0, 2), (0, 3)],
+    "tetromino-L": [(0, 0), (0, 1), (0, 2), (1, 2)],
+    "tetromino-O": [(0, 0), (1, 0), (0, 1), (1, 1)],
+    "tetromino-S": [(1, 0), (2, 0), (0, 1), (1, 1)],
+    "tetromino-T": [(0, 1), (1, 1), (2, 1), (1, 0)],
+    "pentomino-F": [(0,1), (1,0), (1,1), (1,2), (2,2)],
+    "pentomino-I": [(0, 0), (0, 1), (0, 2), (0, 3), (0, 4)],
+    "pentomino-L": [(0, 0), (0, 1), (0, 2), (0, 3), (1, 0)],
+    "pentomino-N": [(0, 0), (0, 1), (1, 1), (1, 2), (1, 3)],
+    "pentomino-P": [(0, 0), (1, 0), (0, 1), (1, 1), (0, 2)],
+    "pentomino-T": [(0,2), (1, 2), (2, 2), (1, 0), (1, 1)],
+    "pentomino-U": [(0, 0), (0, 1), (1, 0), (2, 0), (2, 1)],
+    "pentomino-V": [(0, 0), (0, 1), (0, 2), (1, 0), (2, 0)],
+    "pentomino-W": [(0, 1), (0, 2), (1, 0), (1, 1), (2, 0)],
+    "pentomino-X": [(0, 1), (1, 0), (1, 1), (1, 2), (2, 1)],
+    "pentomino-Y": [(0, 2), (1, 0), (1, 1), (1, 2), (1, 3)],
+    "pentomino-Z": [(0,2), (1,0), (1,1), (1,2), (2,0)],
+    # add more as needed
+}
+
+PALETTE = [
+    (65, 105, 225),
+    (255, 99, 71),
+    (80, 180, 255),
+    (191, 255, 0),
+    (147, 112, 219),
+    (220, 20, 60),
+    (0, 255, 255),
+    (255, 200, 50),
+    (50, 205, 50),
+    (124, 252, 0),
+    (255, 0, 255),
+    (255, 20, 147),
+    (255, 127, 80),
+    (100, 40, 160),
+    (186, 85, 211),
+    (255, 140, 0),
+    (210, 180, 140),
+    (0, 255, 127),
+    (64, 224, 208),
+]
+
+# ---------- Polyomino helper functions ----------
+def normalize(cells):
+    """Shift cells so the smallest x and y are 0 (normalize to top-left)."""
+    if not cells:
+        return cells
+    minx = min(c[0] for c in cells)
+    miny = min(c[1] for c in cells)
+    return [(x - minx, y - miny) for (x, y) in cells]
+
+def rotate90(cells):
+    """Rotate 90 degrees clockwise around origin. Returns normalized coords."""
+    # For screen space (y increases downward), rotate clockwise: (x, y) -> (y, -x)
+    rotated = [(y, -x) for (x, y) in cells]
+    return normalize(rotated)
+
+def flip_horizontal(cells):
+    flipped = [(-x, y) for (x, y) in cells]
+    return normalize(flipped)
+
+# ---------- Classes ----------
+class Polyomino:
+    def __init__(self, cells, color=None, name=None):
+        self.cells = normalize(cells)
+        self.name = name or "poly"
+        self.color = color or random.choice(PALETTE)
+
+    def rotated(self):
+        return Polyomino(rotate90(self.cells), color=self.color, name=self.name + "_rot")
+
+    def flipped(self):
+        return Polyomino(flip_horizontal(self.cells), color=self.color, name=self.name + "_flip")
+
+    def bounding(self):
+        if not self.cells:
+            return 0, 0
+        maxx = max(x for x, _ in self.cells)
+        maxy = max(y for _, y in self.cells)
+        return maxx + 1, maxy + 1
+
+class Board:
+    def __init__(self, cols, rows, cell_size, origin):
+        self.cols = cols
+        self.rows = rows
+        self.cell_size = cell_size
+        self.origin = origin  # pixel origin (x, y)
+        # grid occupancy: dict (x,y) -> color
+        self.grid = {}
+
+    def to_pixel(self, gx, gy):
+        """Grid coordinate to top-left pixel"""
+        ox, oy = self.origin
+        return ox + gx * self.cell_size, oy + gy * self.cell_size
+
+    def draw_background(self, surface):
+        """Draw the grid background rectangle behind everything."""
+        ox, oy = self.origin
+        cs = self.cell_size
+        grid_rect = pygame.Rect(ox - 1, oy - 1, cs * self.cols + 2, cs * self.rows + 2)
+        pygame.draw.rect(surface, (50, 50, 50), grid_rect)
+
+    def draw_grid_lines(self, surface, font=None):
+        """Draw grid lines and optional coordinate labels on top of pieces."""
+        ox, oy = self.origin
+        cs = self.cell_size
+        # vertical lines
+        for x in range(self.cols + 1):
+            start = (ox + x * cs, oy)
+            end = (ox + x * cs, oy + self.rows * cs)
+            pygame.draw.line(surface, GRID_COLOR, start, end, 1)
+        # horizontal lines
+        for y in range(self.rows + 1):
+            start = (ox, oy + y * cs)
+            end = (ox + self.cols * cs, oy + y * cs)
+            pygame.draw.line(surface, GRID_COLOR, start, end, 1)
+        # draw coordinates optional
+        if font:
+            for x in range(self.cols):
+                px, py = self.to_pixel(x, 0)
+                label = font.render(str(x), True, (160,160,160))
+                surface.blit(label, (px + 2, oy - 18))
+            for y in range(self.rows):
+                px, py = self.to_pixel(0, y)
+                label = font.render(str(y), True, (160,160,160))
+                surface.blit(label, (ox - 26, py + 2))
+
+    def place_poly(self, poly, gx, gy):
+        """Place cells of poly at grid position (gx, gy). If out-of-range they are skipped."""
+        for x, y in poly.cells:
+            tx = gx + x
+            ty = gy + y
+            if 0 <= tx < self.cols and 0 <= ty < self.rows:
+                self.grid[(tx, ty)] = poly.color
+
+    def draw_placed(self, surface):
+        for (x, y), color in self.grid.items():
+            px, py = self.to_pixel(x, y)
+            rect = pygame.Rect(px+1, py+1, self.cell_size-1, self.cell_size-1)
+            pygame.draw.rect(surface, color, rect)
+
+    def clear(self):
+        self.grid.clear()
+
+# ---------- Main application ----------
+def draw_polyomino_preview(surface, board, poly, gx, gy, alpha=180):
+    """Draws the polyomino as a preview at grid pos (gx, gy) with transparency."""
+    # We'll draw directly to the main surface using a 4-tuple color if possible.
+    for x, y in poly.cells:
+        tx = gx + x
+        ty = gy + y
+        if 0 <= tx < board.cols and 0 <= ty < board.rows:
+            px, py = board.to_pixel(tx, ty)
+            rect = pygame.Rect(px+1, py+1, board.cell_size-1, board.cell_size-1)
+            # Try to use an RGBA tuple for a translucent look; if not supported,
+            # it will fall back to opaque RGB.
+            try:
+                preview_color = poly.color + (alpha,)
+                s = pygame.Surface((board.cell_size-1, board.cell_size-1), pygame.SRCALPHA)
+                s.fill(preview_color)
+                surface.blit(s, (px+1, py+1))
+            except Exception:
+                pygame.draw.rect(surface, poly.color, rect)
+
+def grid_from_pixel(board, px, py):
+    ox, oy = board.origin
+    cs = board.cell_size
+    gx = (px - ox) // cs
+    gy = (py - oy) // cs
+    return gx, gy
+
+def clamp(n, a, b):
+    return max(a, min(b, n))
+
+def main():
+    pygame.init()
+    screen = pygame.display.set_mode(WINDOW_SIZE)
+    pygame.display.set_caption("Polyomino Drawer (pygame)")
+    clock = pygame.time.Clock()
+    font = pygame.font.SysFont("Consolas", 16)
+    title_font = pygame.font.SysFont("Consolas", 20, bold=True)
+
+    board = Board(GRID_COLS, GRID_ROWS, GRID_CELL, GRID_ORIGIN)
+
+    # prepare polyomino list
+    poly_list = []
+    for i, (name, cells) in enumerate(SAMPLE_POLYOMINOES.items()):
+        color = PALETTE[i % len(PALETTE)]
+        poly_list.append(Polyomino(cells, color=color, name=name))
+    current_index = 0
+    current_poly = poly_list[current_index]
+
+    # piece position in grid coords
+    piece_gx = board.cols // 2
+    piece_gy = board.rows // 2
+
+    placed_polys = []  # list of (poly, gx, gy)
+
+    running = True
+    show_instructions = True
+
+    while running:
+        dt = clock.tick(FPS)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+
+                elif event.key == pygame.K_RIGHT:
+                    piece_gx = clamp(piece_gx + 1, -10, board.cols + 10)
+                elif event.key == pygame.K_LEFT:
+                    piece_gx = clamp(piece_gx - 1, -10, board.cols + 10)
+                elif event.key == pygame.K_DOWN:
+                    piece_gy = clamp(piece_gy + 1, -10, board.rows + 10)
+                elif event.key == pygame.K_UP:
+                    piece_gy = clamp(piece_gy - 1, -10, board.rows + 10)
+
+                elif event.key == pygame.K_r:
+                    current_poly = current_poly.rotated()
+                elif event.key == pygame.K_f:
+                    current_poly = current_poly.flipped()
+                elif event.key == pygame.K_TAB:
+                    # cycle polyomino
+                    current_index = (current_index + 1) % len(poly_list)
+                    # pick same color as canonical
+                    base = poly_list[current_index]
+                    current_poly = Polyomino(base.cells, color=base.color, name=base.name)
+                elif event.key == pygame.K_SPACE:
+                    # place the current poly on the board permanently
+                    board.place_poly(current_poly, piece_gx, piece_gy)
+                elif event.key == pygame.K_c:
+                    board.clear()
+                elif event.key == pygame.K_i:
+                    show_instructions = not show_instructions
+                elif event.key == pygame.K_EQUALS or event.key == pygame.K_PLUS:
+                    # zoom in
+                    board.cell_size = clamp(board.cell_size + 2, 8, 80)
+                elif event.key == pygame.K_MINUS or event.key == pygame.K_UNDERSCORE:
+                    board.cell_size = clamp(board.cell_size - 2, 8, 80)
+
+                # number keys to choose shape directly
+                elif pygame.K_1 <= event.key <= pygame.K_9:
+                    idx = event.key - pygame.K_1
+                    if idx < len(poly_list):
+                        current_index = idx
+                        base = poly_list[current_index]
+                        current_poly = Polyomino(base.cells, color=base.color, name=base.name)
+
+            elif event.type == pygame.MOUSEMOTION:
+                mx, my = event.pos
+                gx, gy = grid_from_pixel(board, mx, my)
+                # center the piece under mouse roughly: place origin at the cell mouse is on
+                piece_gx, piece_gy = gx, gy
+
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:  # left click places
+                    mx, my = event.pos
+                    gx, gy = grid_from_pixel(board, mx, my)
+                    board.place_poly(current_poly, gx, gy)
+                elif event.button == 3:  # right click rotate CW
+                    current_poly = current_poly.rotated()
+                elif event.button == 2:  # middle click flip
+                    current_poly = current_poly.flipped()
+
+        # Drawing
+        screen.fill(BG_COLOR)
+        # draw grid background first (behind pieces)
+        board.draw_background(screen)
+        # draw placed grid pieces on top of the background
+        board.draw_placed(screen)
+        # draw grid lines and optional coords on top of pieces
+        board.draw_grid_lines(screen, font)
+
+        # draw preview
+        draw_polyomino_preview(screen, board, current_poly, piece_gx, piece_gy)
+
+        # draw UI panel (to the right)
+        ui_x = GRID_ORIGIN[0] + board.cell_size * board.cols + 24
+        ui_y = GRID_ORIGIN[1]
+        # title
+        title = title_font.render("Polyomino Drawer", True, (230,230,230))
+        screen.blit(title, (ui_x, ui_y))
+        ui_y += 34
+
+        # current piece name and cells
+        label = font.render(f"Piece: {current_poly.name}", True, (220,220,220))
+        screen.blit(label, (ui_x, ui_y)); ui_y += 22
+        dims = current_poly.bounding()
+        label2 = font.render(f"Size: {dims[0]} x {dims[1]}  Cells: {len(current_poly.cells)}", True, (200,200,200))
+        screen.blit(label2, (ui_x, ui_y)); ui_y += 22
+
+        # controls
+        controls = [
+            "Controls:",
+            "Move: mouse / arrow keys",
+            "Place: left click or SPACE",
+            "Rotate: R or Right-click",
+            "Flip: F or Middle-click",
+            "Next piece: TAB",
+            "Pick 1-9: choose piece",
+            "Clear: C",
+            "Zoom: +/-",
+            "Toggle help: I",
+            "Quit: ESC",
+        ]
+        for line in controls:
+            txt = font.render(line, True, (180,180,180))
+            screen.blit(txt, (ui_x, ui_y))
+            ui_y += 18
+
+        # legend of sample pieces with swatches
+        ui_y += 8
+        legend_title = font.render("Palette / Shapes", True, (210,210,210))
+        screen.blit(legend_title, (ui_x, ui_y)); ui_y += 18
+        gx = ui_x
+        for i, p in enumerate(poly_list[:9]):
+            sw = pygame.Rect(gx, ui_y, 18, 18)
+            pygame.draw.rect(screen, p.color, sw)
+            nm = font.render(p.name, True, (200,200,200))
+            screen.blit(nm, (gx + 22, ui_y))
+            ui_y += 20
+
+        # optional on-screen instructions overlay
+        if show_instructions:
+            instructions = [
+                "Left click to snap/place polyomino at that grid cell.",
+                "Right click to rotate 90° CW. Middle click to flip horizontally.",
+                "Press TAB to cycle shapes, or 1-9 to pick directly.",
+                "Use +/- to change grid zoom (cell size).",
+            ]
+            iy = GRID_ORIGIN[1] + board.rows * board.cell_size + 12
+            for line in instructions:
+                txt = font.render(line, True, (200,200,200))
+                screen.blit(txt, (GRID_ORIGIN[0], iy))
+                iy += 18
+
+        pygame.display.flip()
+
+    pygame.quit()
+    sys.exit()
+
+if __name__ == "__main__":
+    main()
