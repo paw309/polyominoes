@@ -39,8 +39,8 @@ BG_COLOR = (30, 30, 30)
 GRID_ORIGIN = (60, 60)  # top-left pixel of grid
 
 # Defaults
-DEFAULT_GRID_COLS = 16
-DEFAULT_GRID_ROWS = 16
+DEFAULT_GRID_COLS = 20
+DEFAULT_GRID_ROWS = 20
 
 # ---------- Sample polyomino definitions ----------
 SAMPLE_POLYOMINOES = {
@@ -84,7 +84,7 @@ PALETTE = [
     (255, 140, 0),
     (210, 180, 140),
     (0, 255, 127),
-    (64, 224, 208),
+    (0, 0, 0),
 ]
 
 # ---------- Polyomino helper functions ----------
@@ -288,11 +288,11 @@ class PieceCycle:
 # Determine pieces by class prefix
 def pieces_for_class(choice_token):
     token = choice_token.lower()
-    if token == "tri":
+    if token == "3":
         prefix = "triomino"
-    elif token == "tet":
+    elif token == "4":
         prefix = "tetromino"
-    elif token == "pen":
+    elif token == "5":
         prefix = "pentomino"
     else:
         prefix = None
@@ -315,7 +315,7 @@ def main():
             return deg in (1, 2, 3)
 
         if degree_uses_class_only(degree):
-            poly_choice_token = ask_choice("Polyomino class", ["tri","tet","pen","mix"], "pen")
+            poly_choice_token = ask_choice("Polyomino class", ["3","4","5","9"], "5")
         else:
             # For mixed degrees, force 'mix' behavior; user is not asked
             poly_choice_token = "mix"
@@ -326,7 +326,7 @@ def main():
         pygame.display.set_caption("Polyomino Drawer")
         clock = pygame.time.Clock()
         font = pygame.font.SysFont("Consolas", 16)
-        title_font = pygame.font.SysFont("Consolas", 20, bold=True)
+        # title_font = pygame.font.SysFont("Consolas", 20, bold=True)
 
         # Setup grid size locally
         grid_cols = grid_n
