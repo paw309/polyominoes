@@ -367,17 +367,12 @@ def main():
         # Prepare color structures according to color_choice
         unique_color_map = {}
         shared_color = None
+        color_pool = None
         if color_choice == "unique":
-            # Pre-assign unique colors to available polyomino names (for consistent preview)
-            # This ensures each available name has a distinct color until palette is exhausted.
-            # Implementation: shuffle PALETTE and pop colors; when exhausted reshuffle and continue.
+            # Prepare a shuffled pool to draw from when a name is first placed.
             color_pool = PALETTE[:]
             random.shuffle(color_pool)
-            for name, _ in chosen:
-                if not color_pool:
-                    color_pool = PALETTE[:]
-                    random.shuffle(color_pool)
-                unique_color_map[name] = color_pool.pop()
+            # Do NOT pre-populate unique_color_map here (lazy assignment will occur during placement)
         elif color_choice == "same":
             shared_color = random.choice(PALETTE)
         # if color_choice == "random", no prep needed
@@ -386,6 +381,7 @@ def main():
         poly_list = []
         for i, (name, cells) in enumerate(chosen):
             # assign a default color for listing consistent with policy via pick_color
+            # For 'unique' we do not consume the pool here; pick_color will return a random preview color.
             color = pick_color(name, color_choice, unique_color_map, shared_color)
             poly_list.append(Polyomino(cells, color=color, name=name))
 
@@ -418,10 +414,24 @@ def main():
 
         # Helper to produce the next piece (Polyomino object with appropriate color and randomized orientation)
         def get_next_piece_for_placement(randomize_orientation=True):
+            nonlocal color_pool
             # choose piece (name, cells) randomly from chosen pool
             name, cells = random.choice(chosen)
-            # choose color per policy via centralized helper
-            color = pick_color(name, color_choice, unique_color_map, shared_color)
+            # choose color per policy
+            if color_choice == "unique":
+                # Lazy assignment: if this name has no color yet, assign one from color_pool now.
+                color = unique_color_map.get(name)
+                if color is None:
+                    if not color_pool:
+                        # Fallback refill if pool exhausted (with your constraints this shouldn't happen)
+                        color_pool = PALETTE[:]
+                        random.shuffle(color_pool)
+                    color = color_pool.pop()
+                    unique_color_map[name] = color
+            elif color_choice == "random":
+                color = random.choice(PALETTE)
+            else:  # same
+                color = shared_color
             poly = Polyomino(cells, color=color, name=name)
             if randomize_orientation:
                 poly = random_orientation(poly)
