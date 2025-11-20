@@ -16,10 +16,10 @@
 # random (r) - each placement chooses a random color from PALETTE.
 # same   (s) - a single random color is chosen and used for all placements.
 #
-# Placement is always random and stops when occupied squares >= ceil(rows * cols * 0.2).
+# Placement is always random and stops when occupied squares reaches user selected value.
 # After placement the program waits for either:
 #   - 'R' restarts the script (re-run console prompts and placement)
-#   - ESC quits and closes window)
+#   - ESC quits and closes window
 #
 # All placements enforce no-overlap and in-bounds.
 # Counts are updated in this order: place -> increment polyomino count -> increment square count.
@@ -33,14 +33,13 @@ import pygame
 WINDOW_SIZE = (1200, 800)
 FPS = 60
 
-GRID_CELL = 36
-GRID_COLOR = (200, 200, 200)
-BG_COLOR = (30, 30, 30)
-GRID_ORIGIN = (36, 36)  # top-left pixel of grid
+GRID_CELL = 32
+GRID_COLOR = (102, 51, 0)
+BG_COLOR = (32, 32, 32)
+GRID_ORIGIN = (32, 32)  # top-left pixel of grid
 
 # Defaults
 DEFAULT_GRID_COLS = 20
-DEFAULT_GRID_ROWS = 20
 
 # ---------- Sample polyomino definitions ----------
 SAMPLE_POLYOMINOES = {
@@ -117,7 +116,6 @@ PALETTE = [
     (100, 40, 160),
     (186, 85, 211),
     (255, 140, 0),
-    (210, 180, 140),
     (0, 255, 127),
     (0, 0, 0),
 ]
@@ -186,15 +184,7 @@ class Board:
             start = (ox, oy + y * cs)
             end = (ox + self.cols * cs, oy + y * cs)
             pygame.draw.line(surface, GRID_COLOR, start, end, 1)
-        if font:
-            for x in range(self.cols):
-                px, py = self.to_pixel(x, 0)
-                label = font.render(str(x), True, (160,160,160))
-                #surface.blit(label, (px + 2, oy - 18))
-            for y in range(self.rows):
-                px, py = self.to_pixel(0, y)
-                label = font.render(str(y), True, (160,160,160))
-                #surface.blit(label, (ox - 26, py + 2))
+        # Column/row labels are intentionally not rendered to avoid unnecessary cost.
 
     def can_place(self, poly, gx, gy):
         for x, y in poly.cells:
@@ -221,22 +211,6 @@ class Board:
 
     def clear(self):
         self.grid.clear()
-
-# ---------- Drawing helpers ----------
-def draw_polyomino_preview(surface, board, poly, gx, gy, alpha=180):
-    for x, y in poly.cells:
-        tx = gx + x
-        ty = gy + y
-        if 0 <= tx < board.cols and 0 <= ty < board.rows:
-            px, py = board.to_pixel(tx, ty)
-            rect = pygame.Rect(px+1, py+1, board.cell_size-1, board.cell_size-1)
-            try:
-                preview_color = poly.color + (alpha,)
-                s = pygame.Surface((board.cell_size-1, board.cell_size-1), pygame.SRCALPHA)
-                s.fill(preview_color)
-                surface.blit(s, (px+1, py+1))
-            except Exception:
-                pygame.draw.rect(surface, poly.color, rect)
 
 def grid_from_pixel(board, px, py):
     ox, oy = board.origin
@@ -287,22 +261,6 @@ def random_orientation(poly):
     if random.choice([True, False]):
         p = p.flipped()
     return Polyomino(p.cells, color=poly.color, name=poly.name)
-
-# Color pool generator (shuffle and pop)
-class ColorPool:
-    def __init__(self, palette):
-        self.palette = list(palette)
-        self.pool = []
-        self._refill()
-
-    def _refill(self):
-        self.pool = self.palette[:]
-        random.shuffle(self.pool)
-
-    def next(self):
-        if not self.pool:
-            self._refill()
-        return self.pool.pop()
 
 # Determine pieces by class prefix
 def pieces_for_class(choice_token):
@@ -359,7 +317,7 @@ def main():
 
         board = Board(grid_cols, grid_rows, GRID_CELL, GRID_ORIGIN)
 
-        # threshold (ceil 20%)
+        # threshold (ceil 25%)
         target_squares = math.ceil(board.cols * board.rows * 0.25)
 
         # Build chosen piece list according to class token
@@ -368,15 +326,18 @@ def main():
 
         # Prepare color structures according to color_choice
         unique_color_map = {}
-        unique_color_pool = None
         shared_color = None
         if color_choice == "unique":
-            unique_color_pool = ColorPool(PALETTE)
             # Pre-assign unique colors to available polyomino names (for consistent preview)
             # This ensures each available name has a distinct color until palette is exhausted.
+            # Implementation: shuffle PALETTE and pop colors; when exhausted reshuffle and continue.
+            color_pool = PALETTE[:]
+            random.shuffle(color_pool)
             for name, _ in chosen:
-                if name not in unique_color_map:
-                    unique_color_map[name] = unique_color_pool.next()
+                if not color_pool:
+                    color_pool = PALETTE[:]
+                    random.shuffle(color_pool)
+                unique_color_map[name] = color_pool.pop()
         elif color_choice == "same":
             shared_color = random.choice(PALETTE)
         # if color_choice == "random", no prep needed
@@ -399,38 +360,24 @@ def main():
                 poly_list.append(Polyomino(cells, color=random.choice(PALETTE), name=name))
 
         current_index = 0
-        current_poly = poly_list[current_index]
-
-        # piece position in grid coords (used only for preview when drawing; preview will not be shown after placement)
-        piece_gx = board.cols // 2
-        piece_gy = board.rows // 2
+        # current_poly = poly_list[current_index]
 
         placed_polys = []
         placed_count = 0
         occupied_squares = 0
 
-        # helper for placing and counting (strict no-overlap)
+        # helper for placing and counting (strict no-overlap) - now uses Board API
         def try_place_and_record(poly_obj, gx, gy):
             nonlocal placed_count, occupied_squares
-            abs_positions = []
-            for x, y in poly_obj.cells:
-                tx = gx + x
-                ty = gy + y
-                if not (0 <= tx < board.cols and 0 <= ty < board.rows):
-                    return False
-                abs_positions.append((tx, ty))
-            # ensure no overlap
-            for pos in abs_positions:
-                if pos in board.grid:
-                    return False
-            # 1) place
-            for pos in abs_positions:
-                board.grid[pos] = poly_obj.color
-            # 2) increment poly count
+            # use Board.can_place for bounds/overlap check
+            if not board.can_place(poly_obj, gx, gy):
+                return False
+            # place using Board.place_poly
+            board.place_poly(poly_obj, gx, gy)
+            # update counters
             placed_count += 1
-            # 3) increment squares count
-            occupied_squares += len(abs_positions)
-            # record
+            occupied_squares += len(poly_obj.cells)
+            # record placed poly for future use (undo/replay/stats)
             placed_polys.append((Polyomino(poly_obj.cells, color=poly_obj.color, name=poly_obj.name), gx, gy))
             return True
 
@@ -440,12 +387,7 @@ def main():
             name, cells = random.choice(chosen)
             # choose color per policy
             if color_choice == "unique":
-                # lazily assign if not preassigned
-                if name not in unique_color_map:
-                    # ensure we have a pool to draw from
-                    if unique_color_pool is None:
-                        unique_color_pool = ColorPool(PALETTE)
-                    unique_color_map[name] = unique_color_pool.next()
+                # read preassigned color (unique_color_map is the single source-of-truth for unique policy)
                 color = unique_color_map[name]
             elif color_choice == "random":
                 color = random.choice(PALETTE)
@@ -457,14 +399,13 @@ def main():
             return poly
 
         # ---------- Random placement logic (always run) ----------
-        pool = chosen[:]
-        if not pool:
+        if not chosen:
             print("No polyominoes available for placement.")
         else:
-            MAX_TOTAL_ATTEMPTS = 8000
+            max_total_attempts = 8000
             total_attempts = 0
             # We'll repeatedly try to place pieces (multiple instances allowed)
-            while occupied_squares < target_squares and total_attempts < MAX_TOTAL_ATTEMPTS:
+            while occupied_squares < target_squares and total_attempts < max_total_attempts:
                 total_attempts += 1
                 # pick a piece according to selection rules (random from chosen)
                 p = get_next_piece_for_placement(randomize_orientation=True)
@@ -478,9 +419,9 @@ def main():
                 placed = False
                 # small inner attempts to find a valid non-overlapping place for this piece
                 for _ in range(200):
-                    gx = random.randint(0, max_gx)
-                    gy = random.randint(0, max_gy)
-                    if try_place_and_record(p, gx, gy):
+                    try_gx = random.randint(0, max_gx)
+                    try_gy = random.randint(0, max_gy)
+                    if try_place_and_record(p, try_gx, try_gy):
                         placed = True
                         break
                 # if not placed, continue
@@ -509,23 +450,11 @@ def main():
                         restart_requested = True
                         waiting = False
                         break
-                    elif event.key == pygame.K_RIGHT:
-                        piece_gx = clamp(piece_gx + 1, -10, board.cols + 10)
-                    elif event.key == pygame.K_LEFT:
-                        piece_gx = clamp(piece_gx - 1, -10, board.cols + 10)
-                    elif event.key == pygame.K_DOWN:
-                        piece_gy = clamp(piece_gy + 1, -10, board.rows + 10)
-                    elif event.key == pygame.K_UP:
-                        piece_gy = clamp(piece_gy - 1, -10, board.rows + 10)
-                    elif event.key == pygame.K_r:
-                        # rotate preview (kept but preview is not drawn after placement)
-                        current_poly = current_poly.rotated()
-                    elif event.key == pygame.K_f:
-                        current_poly = current_poly.flipped()
                     elif event.key == pygame.K_TAB:
-                        current_index = (current_index + 1) % len(poly_list)
-                        base = poly_list[current_index]
-                        current_poly = Polyomino(base.cells, color=base.color, name=base.name)
+                        if poly_list:
+                            current_index = (current_index + 1) % len(poly_list)
+                #            base = poly_list[current_index]
+                #            current_poly = Polyomino(base.cells, color=base.color, name=base.name)
                     elif event.key == pygame.K_EQUALS or event.key == pygame.K_PLUS:
                         board.cell_size = clamp(board.cell_size + 2, 8, 80)
                     elif event.key == pygame.K_MINUS or event.key == pygame.K_UNDERSCORE:
@@ -534,28 +463,15 @@ def main():
                         idx = event.key - pygame.K_1
                         if idx < len(poly_list):
                             current_index = idx
-                            base = poly_list[current_index]
-                            current_poly = Polyomino(base.cells, color=base.color, name=base.name)
-                elif event.type == pygame.MOUSEMOTION:
-                    mx, my = event.pos
-                    gx, gy = grid_from_pixel(board, mx, my)
-                    piece_gx, piece_gy = gx, gy
-                elif event.type == pygame.MOUSEBUTTONDOWN:
-                    # Keep mouse detection but do not perform placements:
-                    # Right / middle clicks still affect preview rotation/flip (preview not shown)
-                    if event.button == 3:
-                        current_poly = current_poly.rotated()
-                    elif event.button == 2:
-                        current_poly = current_poly.flipped()
+                #            base = poly_list[current_index]
+                #            current_poly = Polyomino(base.cells, color=base.color, name=base.name)
+                # mouse movement / clicks previously used for preview; preview removed so ignore mouse motion/button effects here
 
             # Drawing
             screen.fill(BG_COLOR)
             board.draw_background(screen)
             board.draw_placed(screen)
             board.draw_grid_lines(screen, font)
-
-            # NOTE: Do not draw a preview or show the "Controls" list after placement.
-            # The UI on the right will only show the summary and instructions toggle status.
 
             ui_x = GRID_ORIGIN[0] + board.cell_size * board.cols + 48
             ui_y = GRID_ORIGIN[1]
@@ -565,7 +481,6 @@ def main():
             summary = [
                 f"board: {board.cols} x {board.rows}",
                 f"class: {poly_choice_token}",
-            #    f"placement: random",
                 f"color choice: {color_choice}",
                 f"total targets: {placed_count}",
                 f"total squares: {occupied_squares}",
