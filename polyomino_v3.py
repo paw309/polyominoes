@@ -109,14 +109,17 @@ PALETTE = [
     (0, 64, 192),
     (0, 128, 0),
     (0, 128, 128),
+    (0, 128, 192),
     (0, 128, 255),
-    (0, 192, 64),
+    (0, 192, 0),
     (0, 192, 192),
+    (0, 192, 255),
     (0, 255, 0),
     (0, 255, 128),
     (0, 255, 255),
     (128, 0, 0),
     (128, 0, 128),
+    (128, 0, 192),
     (128, 0, 255),
     (128, 64, 192),
     (128, 192, 64),
@@ -124,7 +127,7 @@ PALETTE = [
     (128, 128, 0),
     (128, 128, 255),
     (128, 255, 0),
-    (128, 255, 128),
+    (128, 255, 192),
     (128, 255, 255),
     (255, 0, 0),
     (255, 0, 128),
@@ -365,7 +368,7 @@ def main():
         board = Board(grid_cols, grid_rows, GRID_CELL, GRID_ORIGIN)
 
         # threshold (ceil 25%)
-        target_squares = math.ceil(board.cols * board.rows * 0.1)
+        target_squares = math.ceil(board.cols * board.rows * 0.35)
 
         # Build chosen piece list according to class token
         chosen = pieces_for_class(poly_choice_token)
