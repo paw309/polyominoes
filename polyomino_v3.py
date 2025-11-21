@@ -1,11 +1,10 @@
-# pygame-based polyomino drawer (patched)
-# Requires: pygame (pip install pygame)
-# Run: python draw_v4.py
+# pygame-based polyomino drawer
+# Requires pygame (pip install pygame)
 #
-# This variant adds a user selection phase (console prompts)
-# to choose:
+# user selection phase (console prompts)
 #  - square board size (N x N), 6 <= N <= 20
-#  - which polyomino class to use (tri/tet/pen/mix)
+#  - which polyomino class to use (tri/tet/pen/hex/mix)
+#  - density selection (1..6)
 #  - color choice policy: 'unique' (u), 'random' (r), or 'same' (s)
 #
 # Color choice mapping:
@@ -33,7 +32,7 @@ import pygame
 WINDOW_SIZE = (1200, 800)
 FPS = 60
 
-GRID_CELL = 32
+GRID_CELL = 36
 # Colors requested
 LIGHT_SQUARE = (255, 255, 240)
 DARK_SQUARE = (232, 200, 150)
@@ -341,6 +340,11 @@ def main():
         # Polyomino class prompt (user picks tri/tet/pen or mix)
         poly_choice_token = ask_choice("Polyomino class", ["3","4","5","6","9"], "6")
 
+        # Density prompt: 1..6, default 3
+        density_choice = ask_int("Density (1..6)", 1, 6, 3)
+        # density formula as requested:
+        density = 0.4 - (density_choice * 0.05)
+
         # Color choice prompt: allow full word or first letter (u/r/s)
         raw_color = ask_choice("Colors", ["unique","random","same","u","r","s"], "random")
         # normalize
@@ -367,8 +371,8 @@ def main():
 
         board = Board(grid_cols, grid_rows, GRID_CELL, GRID_ORIGIN)
 
-        # threshold (ceil 25%)
-        target_squares = math.ceil(board.cols * board.rows * 0.35)
+        # threshold using chosen density
+        target_squares = math.ceil(board.cols * board.rows * density)
 
         # Build chosen piece list according to class token
         chosen = pieces_for_class(poly_choice_token)
@@ -524,13 +528,15 @@ def main():
 
             ui_x = GRID_ORIGIN[0] + board.cell_size * board.cols + 48
             ui_y = GRID_ORIGIN[1]
-            ui_y += 32
+            ui_y += 36
 
             ui_y += 8
             summary = [
                 f"board: {board.cols} x {board.rows}",
                 f"class: {poly_choice_token}",
+                f"density: {density_choice} ({int(density*100)}%)",
                 f"colors: {color_choice}",
+                "",
                 f"targets: {placed_count}",
                 f"squares: {occupied_squares}",
                 "",
