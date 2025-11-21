@@ -155,22 +155,6 @@ def flip_horizontal(cells):
     flipped = [(-x, y) for (x, y) in cells]
     return normalize(flipped)
 
-def pick_color(name, color_choice, unique_color_map=None, shared_color=None):
-    """
-    Centralized color selection:
-    - 'unique' reads from unique_color_map[name] if available (fallback random)
-    - 'same' returns shared_color (fallback random)
-    - otherwise returns a random palette color
-    """
-    if color_choice == "unique":
-        if unique_color_map and name in unique_color_map:
-            return unique_color_map[name]
-        # fallback to random if not preassigned
-        return random.choice(PALETTE)
-    elif color_choice == "same":
-        return shared_color if shared_color is not None else random.choice(PALETTE)
-    else:
-        return random.choice(PALETTE)
 
 class Polyomino:
     def __init__(self, cells, color=None, name=None):
@@ -179,10 +163,10 @@ class Polyomino:
         self.color = color or random.choice(PALETTE)
 
     def rotated(self):
-        return Polyomino(rotate90(self.cells), color=self.color, name=self.name + "_rot")
+        return Polyomino(rotate90(self.cells), color=self.color, name=self.name)
 
     def flipped(self):
-        return Polyomino(flip_horizontal(self.cells), color=self.color, name=self.name + "_flip")
+        return Polyomino(flip_horizontal(self.cells), color=self.color, name=self.name)
 
     def bounding(self):
         if not self.cells:
@@ -222,7 +206,7 @@ class Board:
                 rect = pygame.Rect(px, py, cs, cs)
                 pygame.draw.rect(surface, color, rect)
 
-    def draw_grid_lines(self, surface, font=None):
+    def draw_grid_lines(self, surface):
         ox, oy = self.origin
         cs = self.cell_size
         for x in range(self.cols + 1):
@@ -260,13 +244,6 @@ class Board:
 
     def clear(self):
         self.grid.clear()
-
-def grid_from_pixel(board, px, py):
-    ox, oy = board.origin
-    cs = board.cell_size
-    gx = (px - ox) // cs
-    gy = (py - oy) // cs
-    return gx, gy
 
 def clamp(n, a, b):
     return max(a, min(b, n))
@@ -391,21 +368,6 @@ def main():
             shared_color = random.choice(PALETTE)
         # if color_choice == "random", no prep needed
 
-        # Build a canonical poly_list for UI cycling (so TAB/1-9 can still show shapes)
-        poly_list = []
-        for i, (name, cells) in enumerate(chosen):
-            # assign a default color for listing consistent with policy via pick_color
-            # For 'unique' we do not consume the pool here; pick_color will return a random preview color.
-            color = pick_color(name, color_choice, unique_color_map, shared_color)
-            poly_list.append(Polyomino(cells, color=color, name=name))
-
-        if not poly_list:
-            # fallback
-            for i, (name, cells) in enumerate(SAMPLE_POLYOMINOES.items()):
-                poly_list.append(Polyomino(cells, color=random.choice(PALETTE), name=name))
-
-        current_index = 0
-        # current_poly = poly_list[current_index]
 
         placed_polys = []
         placed_count = 0
@@ -423,7 +385,7 @@ def main():
             placed_count += 1
             occupied_squares += len(poly_obj.cells)
             # record placed poly for future use (undo/replay/stats)
-            placed_polys.append((Polyomino(poly_obj.cells, color=poly_obj.color, name=poly_obj.name), gx, gy))
+            placed_polys.append((poly_obj, gx, gy))
             return True
 
         # Helper to produce the next piece (Polyomino object with appropriate color and randomized orientation)
@@ -469,13 +431,12 @@ def main():
                 if max_gx < 0 or max_gy < 0:
                     # piece too big
                     continue
-                placed = False
-                # small inner attempts to find a valid non-overlapping place for this piece
+                # small inner attempts to find a valid non-overlapping place for this piece;
+                # stop on first successful placement
                 for _ in range(200):
                     try_gx = random.randint(0, max_gx)
                     try_gy = random.randint(0, max_gy)
                     if try_place_and_record(p, try_gx, try_gy):
-                        placed = True
                         break
                 # if not placed, continue
             if occupied_squares >= target_squares:
@@ -489,7 +450,7 @@ def main():
         restart_requested = False
 
         while waiting:
-            dt = clock.tick(FPS)
+            clock.tick(FPS)
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
@@ -503,28 +464,16 @@ def main():
                         restart_requested = True
                         waiting = False
                         break
-                    elif event.key == pygame.K_TAB:
-                        if poly_list:
-                            current_index = (current_index + 1) % len(poly_list)
-                #            base = poly_list[current_index]
-                #            current_poly = Polyomino(base.cells, color=base.color, name=base.name)
                     elif event.key == pygame.K_EQUALS or event.key == pygame.K_PLUS:
                         board.cell_size = clamp(board.cell_size + 2, 8, 80)
                     elif event.key == pygame.K_MINUS or event.key == pygame.K_UNDERSCORE:
                         board.cell_size = clamp(board.cell_size - 2, 8, 80)
-                    elif pygame.K_1 <= event.key <= pygame.K_9:
-                        idx = event.key - pygame.K_1
-                        if idx < len(poly_list):
-                            current_index = idx
-                #            base = poly_list[current_index]
-                #            current_poly = Polyomino(base.cells, color=base.color, name=base.name)
-                # mouse movement / clicks previously used for preview; preview removed so ignore mouse motion/button effects here
 
             # Drawing
             screen.fill(BG_COLOR)
             board.draw_background(screen)
             board.draw_placed(screen)
-            board.draw_grid_lines(screen, font)
+            board.draw_grid_lines(screen)
 
             ui_x = GRID_ORIGIN[0] + board.cell_size * board.cols + 48
             ui_y = GRID_ORIGIN[1]
