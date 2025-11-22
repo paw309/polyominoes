@@ -14,7 +14,7 @@ import random
 import pygame
 
 # ---------- Configuration ----------
-WINDOW_SIZE = (1200, 800)
+WINDOW_SIZE = (1400, 800)
 FPS = 60
 
 GRID_CELL = 36
@@ -23,7 +23,7 @@ LIGHT_SQUARE = (255, 255, 240)
 DARK_SQUARE = (232, 200, 150)
 GRID_COLOR = (102, 51, 0)
 BG_COLOR = (32, 32, 32)
-GRID_ORIGIN = (32, 32)  # top-left pixel of grid
+GRID_ORIGIN = (32, 32)  # kept for backwards compatibility if needed
 
 # Defaults
 DEFAULT_GRID_COLS = 20
@@ -272,6 +272,7 @@ def main():
     # Initial board defaults (editable in GUI)
     grid_cols = DEFAULT_GRID_COLS
     grid_rows = DEFAULT_GRID_COLS
+    # initial origin is arbitrary; we'll compute and set the true origin every frame
     board = Board(grid_cols, grid_rows, GRID_CELL, GRID_ORIGIN)
 
     # GUI menu selection options and defaults
@@ -279,7 +280,7 @@ def main():
         # label, possible values list, current index
         ("piece", ["knight", "fairy"], 0),  # default 'knight'
         # 'board' will be numeric 6..20; store as list of ints for cycling
-        ("board", [i for i in range(6, 21)], 0),
+        ("board", [i for i in range(6, 25)], 0),
         ("shapes", ["triomino", "tetromino", "pentomino", "hexomino", "mixed"], 2),  # default pentomino
         ("density", ["35%", "30%", "25%", "20%", "15%", "10%"], 2),  # default '25%'
         ("colors", ["unique", "random", "same"], 1),  # default random
@@ -317,7 +318,7 @@ def main():
     current_board_size = int(current_selections["board"])
 
     def compute_density_from_index(idx):
-        # idx 0-> '35%' corresponds to density_choice 1 .. 6 mapping originally
+        # idx 0-> '35%' corresponds to density_choice 1 . 6 mapping originally
         density_choice = idx + 1
         return 0.4 - (density_choice * 0.05)
 
@@ -328,6 +329,7 @@ def main():
         nonlocal current_board_size, current_selections
 
         # reset board & counters
+        # origin is not important here; main loop will recompute the on-screen origin
         board = Board(current_board_size, current_board_size, GRID_CELL, GRID_ORIGIN)
         board.clear()
         placed_polys = []
@@ -401,23 +403,46 @@ def main():
         clock.tick(FPS)
         screen.fill(BG_COLOR)
 
-        # draw board background and placed polys if any
+        # --- compute message box and board origin/layout first ---
+        # message box is pinned one GRID_CELL from left and top of game window
+        margin = GRID_CELL
+        msg_left = margin
+        msg_top = margin
+        msg_width = GRID_CELL * 10
+        msg_right = msg_left + msg_width
+        msg_bottom = WINDOW_SIZE[1] - margin  # one GRID_CELL margin from bottom
+        msg_height = msg_bottom - msg_top
+        msg_rect = pygame.Rect(msg_left, msg_top, msg_width, msg_height)
+        # fill message box background
+        pygame.draw.rect(screen, LIGHT_SQUARE, msg_rect)
+
+        # remaining area for the board: to the right of the message box, with a one GRID_CELL margin
+        area_left = msg_right + margin
+        area_top = margin
+        area_right = WINDOW_SIZE[0] - margin
+        area_bottom = WINDOW_SIZE[1] - margin
+        area_width = area_right - area_left
+        area_height = area_bottom - area_top
+
+        # compute board pixel size and center it in remaining area while preserving a one-GRID_CELL margin
+        board_pixel_w = board.cols * board.cell_size
+        board_pixel_h = board.rows * board.cell_size
+
+        origin_x = area_left + (area_width - board_pixel_w) // 2
+        origin_y = area_top + (area_height - board_pixel_h) // 2
+
+        # clamp to ensure the board origin does not violate the left/top margin or go beyond the right/bottom margin
+        origin_x = max(area_left, min(origin_x, area_right - board_pixel_w))
+        origin_y = max(area_top, min(origin_y, area_bottom - board_pixel_h))
+
+        board.origin = (origin_x, origin_y)
+
+        # draw board background and placed polys (board origin has been set to the centered position)
         board.draw_background(screen)
         board.draw_placed(screen)
         board.draw_grid_lines(screen)
 
-        # compute message box geometry: moved up by one GRID_CELL (msg_top = GRID_ORIGIN[1])
-        msg_left = GRID_ORIGIN[0] + board.cell_size * board.cols + GRID_CELL  # one GRID_CELL margin from board
-        msg_top = GRID_ORIGIN[1]  # moved up by one GRID_CELL compared to previous placement
-        msg_width = GRID_CELL * 10
-        msg_right = msg_left + msg_width
-        msg_bottom = WINDOW_SIZE[1] - GRID_CELL  # one GRID_CELL margin from bottom
-        msg_height = msg_bottom - msg_top
-        msg_rect = pygame.Rect(msg_left, msg_top, msg_width, msg_height)
-        # fill background LIGHT_SQUARE
-        pygame.draw.rect(screen, LIGHT_SQUARE, msg_rect)
-
-        # Prepare layout metrics for menu items
+        # Prepare layout metrics for menu items (inside message box)
         # All messages begin one GRID_CELL from left of message box
         text_x = msg_left + GRID_CELL
         first_line_y = msg_top + GRID_CELL
