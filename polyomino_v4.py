@@ -1,12 +1,9 @@
 # pygame-based polyomino drawer (modified for GUI menu)
 # Requires pygame (pip install pygame)
 #
-# GUI menu added to replace console prompts. Placement happens when the user
-# clicks the blue "start" button. Menu remains visible but is disabled while
-# a layout is shown; only "repeat" and "exit" remain active then.
-# Tweaks:
-# - message box moved up by one GRID_CELL
-# - repeat button placed in the same rect as start (toggle)
+# Placement happens when user clicks the blue "start" button
+# Menu remains visible but is disabled while a layout is shown
+# only "repeat" and "exit" remain active then.
 
 import sys
 import math
@@ -14,7 +11,7 @@ import random
 import pygame
 
 # ---------- Configuration ----------
-WINDOW_SIZE = (1400, 800)
+WINDOW_SIZE = (1200, 720)
 FPS = 60
 
 GRID_CELL = 36
@@ -243,8 +240,8 @@ def random_orientation(poly):
         p = p.flipped()
     return Polyomino(p.cells, color=poly.color, name=poly.name)
 
-# Determine pieces by class prefix
-def pieces_for_class(choice_token):
+# Determine shapes by class prefix
+def shapes_for_class(choice_token):
     token = str(choice_token).lower()
     if token == "3":
         prefix = "tri"
@@ -336,10 +333,10 @@ def main():
         placed_count = 0
         occupied_squares = 0
 
-        # prepare chosen pieces list according to shapes selection token
+        # prepare chosen shapes list according to shapes selection token
         shapes_choice = current_selections["shapes"]
         shapes_token = {"triomino": "3", "tetromino": "4", "pentomino": "5", "hexomino": "6", "mixed": "9"}[shapes_choice]
-        chosen = pieces_for_class(shapes_token)
+        chosen = shapes_for_class(shapes_token)
         if not chosen:
             return
 
@@ -363,7 +360,7 @@ def main():
         total_attempts = 0
         while occupied_squares < target_squares and total_attempts < max_total_attempts:
             total_attempts += 1
-            # pick a piece and color
+            # pick a shape and color
             name, cells = random.choice(chosen)
             if color_choice == "unique":
                 color = unique_color_map.get(name)
