@@ -14,7 +14,7 @@ import pygame
 WINDOW_SIZE = (1200, 720)
 FPS = 60
 
-GRID_CELL = 36
+GRID_CELL = 32
 # Colors requested
 LIGHT_SQUARE = (255, 255, 240)
 DARK_SQUARE = (232, 200, 150)
@@ -277,7 +277,7 @@ def main():
         # label, possible values list, current index
         ("piece", ["knight", "fairy"], 0),  # default 'knight'
         # 'board' will be numeric 6..20; store as list of ints for cycling
-        ("board", [i for i in range(6, 25)], 0),
+        ("board", [i for i in range(6, 21)], 0),
         ("shapes", ["triomino", "tetromino", "pentomino", "hexomino", "mixed"], 2),  # default pentomino
         ("density", ["35%", "30%", "25%", "20%", "15%", "10%"], 2),  # default '25%'
         ("colors", ["unique", "random", "same"], 1),  # default random
